@@ -1,0 +1,8 @@
+# Files in this repo are served to browsers with Subresource Integrity hashes.
+# A single changed byte invalidates the hash and the component stops loading.
+# Line endings must therefore never be rewritten on checkout or commit.
+
+*.js   -text
+*.css  -text
+*.min.js   -text
+*.min.css  -text
