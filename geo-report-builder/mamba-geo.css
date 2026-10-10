@@ -44,7 +44,8 @@
 
 
 /* ---------- shell ---------- */
-.mg-geo__wrap{max-width:1360px;margin:0 auto;padding:clamp(48px,7vw,104px) var(--mg-pad);}
+/* section rhythm: generous top, modest gap to the app, generous bottom */
+.mg-geo__wrap{max-width:1360px;margin:0 auto;padding:clamp(72px,9vw,144px) var(--mg-pad);}
 
 /* ---------- masthead ---------- */
 .mg-mast{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:clamp(24px,4vw,64px);align-items:end;
@@ -306,7 +307,10 @@ li[data-state="done"] .mg-dot::after{content:"";position:absolute;inset:0;displa
   .mg-geo *{animation-duration:.01ms !important;transition-duration:.01ms !important;}
 }
 
-/* app mount point: the headline and supporting copy are native Webflow
-   elements above and below this, so the app wrap carries no vertical padding */
-.mg-geo__wrap--app{padding-top:0;padding-bottom:0;}
+/* app mount point. The masthead sits in its own wrap above, so the app wrap
+   carries only the gap below that masthead plus the section's bottom padding. */
+.mg-geo__wrap--app{padding-top:0;padding-bottom:clamp(72px,9vw,144px);}
 .mg-geo__wrap--app .mg-stage{margin-top:0;}
+/* when the masthead is present its wrap supplies the top space, so drop its
+   bottom padding to a readable gap rather than a full section break */
+.mg-geo__wrap:has(.mg-mast){padding-bottom:clamp(32px,4.5vw,56px);}

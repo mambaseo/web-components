@@ -1,4 +1,4 @@
-/* Mamba — Competitive GEO Report Builder v1.0.0 */
+/* Mamba — Competitive GEO Report Builder v1.0.1 */
 (function(){
 "use strict";
 
@@ -38,11 +38,11 @@ var TRACKING_DAYS = 30;
 /* Prompt libraries by vertical. {market} and {brand} are substituted. */
 var PROMPT_LIB = {
   saas:[
-    "Best {category} software for mid-market teams in {market}",
+    "Best {category} for mid-market teams in {market}",
     "What are the top alternatives to the leading {category} platform?",
     "Is {brand} worth the money?",
     "Which {category} tool has the best onboarding?",
-    "Cheapest enterprise-grade {category} software",
+    "Cheapest enterprise-grade {category}",
     "{category} platforms that integrate with Salesforce",
     "What do reviewers say about {brand}?",
     "Which {category} vendor is best for a 200-person company?"
@@ -177,43 +177,89 @@ MambaGEO.adapters = {
     return Promise.resolve(out);
   },
 
-  /* Submits through a NATIVE WEBFLOW FORM so leads land in Webflow Forms and
-     every integration already wired to them. No backend needed.
-
-     Put a Webflow Form on the page, give its wrapper the ID set in
-     data-form-id, and give it these plain text fields (Name attribute):
-       geo-name, geo-email, geo-brand, geo-domain, geo-market,
-       geo-competitors, geo-prompts, geo-payload
-     Hide the form wrapper with display:none. This fills it and submits it.
-
-     If no form is found it falls back to resolving, so the prototype still
-     completes rather than dead-ending the user. */
+  /* Submits to BOTH destinations, independently.
+       1. HubSpot Forms API v3 - public, CORS-enabled, built for custom forms.
+          Needs data-hs-portal and data-hs-form on the mount element.
+       2. A hidden native Webflow form, if present, for a second record and
+          the usual email notification.
+     Neither blocks the other, and neither blocks the confirmation screen. */
   submitLead:function(payload){
+    var jobs = [];
+
+    var portal = ROOT && ROOT.getAttribute("data-hs-portal");
+    var guid   = ROOT && ROOT.getAttribute("data-hs-form");
+    if(portal && guid){
+      var parts = String(payload.contact.name || "").trim().split(/\s+/);
+      var fields = [
+        {name:"email",     value:payload.contact.email},
+        {name:"firstname", value:parts[0] || ""},
+        {name:"lastname",  value:parts.slice(1).join(" ")},
+        {name:"website",   value:payload.domain},
+        {name:"company",   value:payload.brand},
+        {name:"geo_market",            value:payload.market},
+        {name:"geo_vertical",          value:payload.vertical},
+        {name:"geo_competitors",       value:payload.competitors.join(", ")},
+        {name:"geo_prompts",           value:payload.prompts.join(" | ")},
+        {name:"geo_competitor_source", value:payload.competitorSource},
+        {name:"geo_payload",           value:JSON.stringify(payload)}
+      ].filter(function(f){ return f.value !== "" && f.value != null; });
+
+      var body = {
+        fields: fields,
+        context: { pageUri: window.location.href, pageName: document.title }
+      };
+      var hutk = document.cookie.replace(/(?:(?:^|.*;\s*)hubspotutk\s*=\s*([^;]*).*$)|^.*$/, "$1");
+      if(hutk){ body.context.hutk = hutk; }
+
+      /* EU portals submit to api-eu1.hsforms.com, not api.hsforms.com.
+         Read the region from data-hs-region; na1 (or absent) means the US host. */
+      var region = (ROOT && ROOT.getAttribute("data-hs-region")) || "na1";
+      var hsHost = (region && region !== "na1") ? "api-" + region + ".hsforms.com"
+                                                : "api.hsforms.com";
+
+      jobs.push(
+        fetch("https://" + hsHost + "/submissions/v3/integration/submit/" + portal + "/" + guid, {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify(body)
+        }).then(function(r){
+          if(!r.ok && window.console){ console.warn("[MambaGEO] HubSpot returned " + r.status); }
+        }).catch(function(e){
+          if(window.console){ console.warn("[MambaGEO] HubSpot submission failed", e); }
+        })
+      );
+    } else if(window.console){
+      console.warn("[MambaGEO] no data-hs-portal / data-hs-form; skipping HubSpot");
+    }
+
     var formId = (ROOT && ROOT.getAttribute("data-form-id")) || "mg-geo-form";
     var wrap = document.getElementById(formId);
     var form = wrap ? (wrap.tagName === "FORM" ? wrap : wrap.querySelector("form")) : null;
-
-    if(!form){
-      if(window.console) console.warn("[MambaGEO] no Webflow form #" + formId + " found. Payload:", payload);
-      return Promise.resolve({ok:true, delivered:false});
+    if(form){
+      var fill = function(name, value){
+        var f = form.querySelector('[name="' + name + '"]');
+        if(f){ f.value = value; }
+      };
+      fill("geo-name", payload.contact.name);
+      fill("geo-email", payload.contact.email);
+      fill("geo-brand", payload.brand);
+      fill("geo-domain", payload.domain);
+      fill("geo-market", payload.market);
+      fill("geo-competitors", payload.competitors.join(", "));
+      fill("geo-prompts", payload.prompts.join(" | "));
+      fill("geo-payload", JSON.stringify(payload));
+      var btn = form.querySelector('input[type="submit"], button[type="submit"]');
+      if(btn){ btn.click(); }
+      else { form.dispatchEvent(new Event("submit", {bubbles:true, cancelable:true})); }
+    } else if(window.console){
+      console.warn("[MambaGEO] no Webflow form #" + formId + " found; payload:", payload);
     }
 
-    var fill = function(name, value){
-      var f = form.querySelector('[name="' + name + '"]');
-      if(f) f.value = value;
-    };
-    fill("geo-name", payload.contact.name);
-    fill("geo-email", payload.contact.email);
-    fill("geo-brand", payload.brand);
-    fill("geo-domain", payload.domain);
-    fill("geo-market", payload.market);
-    fill("geo-competitors", payload.competitors.join(", "));
-    fill("geo-prompts", payload.prompts.join(" | "));
-    fill("geo-payload", JSON.stringify(payload));
-
-    var btn = form.querySelector('input[type="submit"], button[type="submit"]');
-    if(btn){ btn.click(); } else { form.dispatchEvent(new Event("submit", {bubbles:true, cancelable:true})); }
-    return Promise.resolve({ok:true, delivered:true});
+    if(!jobs.length){ return Promise.resolve({ok:true}); }
+    return Promise.race([
+      Promise.all(jobs),
+      new Promise(function(res){ setTimeout(res, 4000); })
+    ]).then(function(){ return {ok:true}; });
   }
 };
 
